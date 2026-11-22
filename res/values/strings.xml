@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">SM Share</string>
+    <string name="hce_desc">SM Share: передача файлу через NFC</string>
+</resources>

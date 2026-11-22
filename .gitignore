@@ -1,0 +1,13 @@
+# Build output
+build/
+*.apk
+*.dex
+
+# Signing keys and secrets - never commit
+*.jks
+*.keystore
+*.p12
+keystore.properties
+.env
+.env.*
+local.properties
