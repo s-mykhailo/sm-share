@@ -23,7 +23,13 @@ If NFC does not work, the link is shown on screen and can be typed in by hand.
 
 ### Without internet or Wi-Fi: Bluetooth
 
-The "Send via Bluetooth" button hands the same file to the system Bluetooth share (OBEX Object Push). Nothing needs to be installed on the other phone: pair the phones, accept the incoming file there. The Wi-Fi/NFC way also works without internet if both phones are on one hotspot.
+With SM Share on both phones: on the receiver press "Receive via Bluetooth" (it becomes visible for 5 minutes), on the sender press "Send via Bluetooth" and pick the receiver from the list. No pairing and no system share dialog; the receiver confirms the file, SM Share transfers it and saves it to Downloads. Bluetooth Classic is slow (roughly 0.1-0.25 MB/s), so use Wi-Fi Direct for big files.
+
+For a phone without SM Share, pick "Phone without SM Share" in the list: the file goes to the system Bluetooth share (OBEX), you pair the phones and accept the file there.
+
+### Safety check
+
+Every received file is checked before it is kept (offline, only the start of the file is read): fake extensions (`photo.jpg.apk`), executable code hidden under a media name, hidden right-to-left characters in the name, and APKs that ask for risky permissions (SMS, accessibility, device admin, overlay, notification access). Dangerous files are deleted, doubtful ones are kept with a warning and are not opened automatically. This is not a real antivirus: there is no malware signature database, so it will not catch a well made virus. Install apps only from people you trust.
 
 ## Requirements
 

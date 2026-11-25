@@ -2,6 +2,11 @@ package com.savchenko.smshare;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothDevice;
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.IntentFilter;
 import android.content.ComponentName;
 import android.content.Intent;
 import android.content.pm.ApplicationInfo;
@@ -23,7 +28,9 @@ import android.provider.Settings;
 import android.view.Gravity;
 import android.view.View;
 import android.view.WindowManager;
+import android.widget.ArrayAdapter;
 import android.widget.Button;
+import android.widget.ScrollView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
@@ -31,6 +38,8 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 public class MainActivity extends Activity {
 
@@ -39,8 +48,9 @@ public class MainActivity extends Activity {
 
     private final Handler ui = new Handler(Looper.getMainLooper());
     private TextView fileTv, statusTv, hintTv;
-    private Button stopBtn, nfcBtn, btBtn, fastBtn;
-    private static final int REQ_PERM = 2;
+    private Button stopBtn, nfcBtn, btBtn, fastBtn, btRecvBtn;
+    private static final int REQ_PERM = 2, REQ_BT = 3, REQ_DISC = 4;
+    private int pendingBt;
     private NfcAdapter nfc;
 
     @Override
@@ -144,12 +154,16 @@ public class MainActivity extends Activity {
         fastBtn.setOnClickListener(v -> startFast());
         root.addView(fastBtn);
 
-        btBtn = button("Передати через Bluetooth (без інтернету)", false);
-        btBtn.setOnClickListener(v -> sendBluetooth());
+        btBtn = button("Передати через Bluetooth", false);
+        btBtn.setOnClickListener(v -> startBtSend());
         root.addView(btBtn);
 
+        btRecvBtn = button("Отримати по Bluetooth", false);
+        btRecvBtn.setOnClickListener(v -> startBtReceive());
+        root.addView(btRecvBtn);
+
         stopBtn = button("Зупинити", false);
-        stopBtn.setOnClickListener(v -> { Direct.stop(); Share.stop(); refresh(); });
+        stopBtn.setOnClickListener(v -> { Direct.stop(); Share.stop(); Bt.stopListen(); refresh(); });
         root.addView(stopBtn);
 
         nfcBtn = button("Увімкнути NFC", false);
@@ -160,18 +174,24 @@ public class MainActivity extends Activity {
         ((LinearLayout.LayoutParams) hintTv.getLayoutParams()).topMargin = dp(22);
         root.addView(hintTv);
 
-        setContentView(root);
+        ScrollView sv = new ScrollView(this);
+        sv.setFillViewport(true);
+        sv.setBackgroundColor(0xFF0B0B0B);
+        sv.addView(root);
+        setContentView(sv);
     }
 
     private void refresh() {
         if (Receiver.busy) return;
         boolean nfcOff = nfc == null || !nfc.isEnabled();
         nfcBtn.setVisibility(nfc != null && !nfc.isEnabled() ? View.VISIBLE : View.GONE);
+        btRecvBtn.setVisibility(Bt.listening ? View.GONE : View.VISIBLE);
 
         if (!Share.active()) {
-            fileTv.setText("Файл не вибрано");
-            statusTv.setText(nfc == null ? "На цьому телефоні нема NFC" : "Обери, що передати");
-            stopBtn.setVisibility(View.GONE);
+            fileTv.setText(Bt.listening ? "Приймаю по Bluetooth" : "Файл не вибрано");
+            statusTv.setText(Bt.listening ? "Чекаю файл. На іншому телефоні: Передати через Bluetooth"
+                    : nfc == null ? "На цьому телефоні нема NFC" : "Обери, що передати");
+            stopBtn.setVisibility(Bt.listening ? View.VISIBLE : View.GONE);
             btBtn.setVisibility(View.GONE);
             fastBtn.setVisibility(View.GONE);
             hintTv.setText("");
@@ -227,9 +247,105 @@ public class MainActivity extends Activity {
         super.onRequestPermissionsResult(req, perms, res);
         if (req == REQ_PERM && res.length > 0 && res[0] == PackageManager.PERMISSION_GRANTED) startFast();
         else if (req == REQ_PERM) statusTv.setText("Без дозволу швидкий режим не працює");
+        else if (req == REQ_BT) {
+            boolean all = res.length > 0;
+            for (int r : res) if (r != PackageManager.PERMISSION_GRANTED) all = false;
+            if (!all) statusTv.setText("Без дозволу Bluetooth не працює");
+            else if (pendingBt == 1) startBtSend();
+            else if (pendingBt == 2) startBtReceive();
+        }
     }
 
-    // ---------- Bluetooth ----------
+    // ---------- Bluetooth між двома SM Share ----------
+
+    private boolean ensureBt(int action) {
+        String[] want = Build.VERSION.SDK_INT >= 31
+                ? new String[]{android.Manifest.permission.BLUETOOTH_SCAN,
+                android.Manifest.permission.BLUETOOTH_CONNECT,
+                android.Manifest.permission.BLUETOOTH_ADVERTISE}
+                : new String[]{android.Manifest.permission.ACCESS_FINE_LOCATION};
+        List<String> need = new ArrayList<>();
+        for (String p : want) if (checkSelfPermission(p) != PackageManager.PERMISSION_GRANTED) need.add(p);
+        if (need.isEmpty()) return true;
+        pendingBt = action;
+        requestPermissions(need.toArray(new String[0]), REQ_BT);
+        return false;
+    }
+
+    private void startBtReceive() {
+        if (!ensureBt(2)) return;
+        Intent i = new Intent(BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE);
+        i.putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, 300);
+        try { startActivityForResult(i, REQ_DISC); } catch (Exception e) { beginListen(); }
+    }
+
+    private void beginListen() {
+        Bt.listen(this, this::askAccept);
+        refresh();
+    }
+
+    /** Викликається з фонового потоку: питає, чи приймати файл. */
+    private boolean askAccept(String name, long size, String from) {
+        final boolean[] ans = new boolean[1];
+        final CountDownLatch latch = new CountDownLatch(1);
+        ui.post(() -> new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+                .setTitle("Прийняти файл?")
+                .setMessage(name + "\n" + human(size) + (from.isEmpty() ? "" : "\nВід: " + from))
+                .setCancelable(false)
+                .setPositiveButton("Прийняти", (d, w) -> { ans[0] = true; latch.countDown(); })
+                .setNegativeButton("Відхилити", (d, w) -> latch.countDown())
+                .show());
+        try { latch.await(90, TimeUnit.SECONDS); } catch (InterruptedException ignored) {}
+        return ans[0];
+    }
+
+    private void startBtSend() {
+        if (!Share.active()) return;
+        if (!ensureBt(1)) return;
+        BluetoothAdapter a = Bt.adapter(this);
+        if (a == null) { statusTv.setText("На цьому телефоні нема Bluetooth"); return; }
+        if (!a.isEnabled()) {
+            try { startActivity(new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)); } catch (Exception ignored) {}
+            statusTv.setText("Увімкни Bluetooth і натисни ще раз");
+            return;
+        }
+        showDevicePicker(a);
+    }
+
+    private void showDevicePicker(BluetoothAdapter a) {
+        final List<BluetoothDevice> devs = new ArrayList<>();
+        final ArrayAdapter<String> ad = new ArrayAdapter<>(this, android.R.layout.simple_list_item_1,
+                new ArrayList<String>());
+        ad.add("Телефон без SM Share (системний обмін)");
+        devs.add(null);
+        try {
+            for (BluetoothDevice d : a.getBondedDevices()) {
+                devs.add(d);
+                String n = null;
+                try { n = d.getName(); } catch (Exception ignored) {}
+                ad.add(n != null ? n : d.getAddress());
+            }
+        } catch (Exception ignored) {}
+        final BroadcastReceiver rc = new FoundReceiver(devs, ad);
+        IntentFilter f = new IntentFilter(BluetoothDevice.ACTION_FOUND);
+        if (Build.VERSION.SDK_INT >= 33) registerReceiver(rc, f, Context.RECEIVER_EXPORTED);
+        else registerReceiver(rc, f);
+        try { a.startDiscovery(); } catch (Exception ignored) {}
+        new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+                .setTitle("Кому передати? (на ньому: Отримати по Bluetooth)")
+                .setAdapter(ad, (d, which) -> {
+                    try { a.cancelDiscovery(); } catch (Exception ignored) {}
+                    if (which == 0) sendBluetooth();
+                    else Bt.send(this, devs.get(which));
+                })
+                .setOnDismissListener(d -> {
+                    try { unregisterReceiver(rc); } catch (Exception ignored) {}
+                    try { a.cancelDiscovery(); } catch (Exception ignored) {}
+                })
+                .show();
+    }
+
+    // ---------- Bluetooth: системний обмін (для телефона без SM Share) ----------
 
     /** Віддає файл системному Bluetooth-обміну (OPP). На другому телефоні додаток не потрібен. */
     private void sendBluetooth() {
@@ -269,6 +385,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onActivityResult(int req, int res, Intent data) {
         super.onActivityResult(req, res, data);
+        if (req == REQ_DISC) { beginListen(); return; }
         if (req == PICK_FILE && res == RESULT_OK && data != null && data.getData() != null) {
             Uri u = data.getData();
             try { getContentResolver().takePersistableUriPermission(u, Intent.FLAG_GRANT_READ_URI_PERMISSION); }
