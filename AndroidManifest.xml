@@ -4,6 +4,14 @@
 
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.NFC"/>
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE"/>
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE"/>
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:maxSdkVersion="32"/>
+    <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES"
+        android:usesPermissionFlags="neverForLocation"/>
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"/>
     <uses-feature android:name="android.hardware.nfc.hce" android:required="false"/>
 
@@ -11,7 +19,8 @@
         android:label="@string/app_name"
         android:icon="@mipmap/ic_launcher"
         android:theme="@android:style/Theme.Material.NoActionBar"
-        android:allowBackup="false">
+        android:allowBackup="false"
+        android:usesCleartextTraffic="true">
 
         <activity android:name=".MainActivity"
             android:exported="true"
@@ -25,6 +34,12 @@
                 <action android:name="android.intent.action.SEND"/>
                 <category android:name="android.intent.category.DEFAULT"/>
                 <data android:mimeType="*/*"/>
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.nfc.action.NDEF_DISCOVERED"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <data android:scheme="vnd.android.nfc" android:host="ext"
+                    android:pathPrefix="/smshare.app:p2p"/>
             </intent-filter>
         </activity>
 

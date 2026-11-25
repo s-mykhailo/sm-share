@@ -14,6 +14,7 @@ import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.nfc.NfcAdapter;
 import android.nfc.cardemulation.CardEmulation;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -38,7 +39,8 @@ public class MainActivity extends Activity {
 
     private final Handler ui = new Handler(Looper.getMainLooper());
     private TextView fileTv, statusTv, hintTv;
-    private Button stopBtn, nfcBtn, btBtn;
+    private Button stopBtn, nfcBtn, btBtn, fastBtn;
+    private static final int REQ_PERM = 2;
     private NfcAdapter nfc;
 
     @Override
@@ -138,12 +140,16 @@ public class MainActivity extends Activity {
         app.setOnClickListener(v -> pickApp());
         root.addView(app);
 
+        fastBtn = button("Швидко: Wi-Fi Direct (SM Share на обох)", true);
+        fastBtn.setOnClickListener(v -> startFast());
+        root.addView(fastBtn);
+
         btBtn = button("Передати через Bluetooth (без інтернету)", false);
         btBtn.setOnClickListener(v -> sendBluetooth());
         root.addView(btBtn);
 
         stopBtn = button("Зупинити", false);
-        stopBtn.setOnClickListener(v -> { Share.stop(); refresh(); });
+        stopBtn.setOnClickListener(v -> { Direct.stop(); Share.stop(); refresh(); });
         root.addView(stopBtn);
 
         nfcBtn = button("Увімкнути NFC", false);
@@ -158,6 +164,7 @@ public class MainActivity extends Activity {
     }
 
     private void refresh() {
+        if (Receiver.busy) return;
         boolean nfcOff = nfc == null || !nfc.isEnabled();
         nfcBtn.setVisibility(nfc != null && !nfc.isEnabled() ? View.VISIBLE : View.GONE);
 
@@ -166,10 +173,17 @@ public class MainActivity extends Activity {
             statusTv.setText(nfc == null ? "На цьому телефоні нема NFC" : "Обери, що передати");
             stopBtn.setVisibility(View.GONE);
             btBtn.setVisibility(View.GONE);
+            fastBtn.setVisibility(View.GONE);
             hintTv.setText("");
             return;
         }
         btBtn.setVisibility(View.VISIBLE);
+        fastBtn.setVisibility(Share.directSsid == null ? View.VISIBLE : View.GONE);
+        if (Share.directSsid != null) {
+            statusTv.setText("Швидкий режим готовий. Приклади телефон з SM Share до спини цього");
+            hintTv.setText("Другий телефон: Android 10+, SM Share відкритий, NFC увімкнено. Він сам підключиться по Wi-Fi Direct і збереже файл у Завантаження.");
+            return;
+        }
         fileTv.setText(Share.name + (Share.size >= 0 ? "  ·  " + human(Share.size) : ""));
         stopBtn.setVisibility(View.VISIBLE);
         String url = Share.url();
@@ -189,6 +203,30 @@ public class MainActivity extends Activity {
         if (b < 1024 * 1024) return String.format("%.1f КБ", b / 1024.0);
         if (b < 1024L * 1024 * 1024) return String.format("%.1f МБ", b / 1048576.0);
         return String.format("%.2f ГБ", b / 1073741824.0);
+    }
+
+    // ---------- швидкий режим (Wi-Fi Direct) ----------
+
+    private void startFast() {
+        if (!Share.active()) return;
+        String perm = Build.VERSION.SDK_INT >= 33 ? android.Manifest.permission.NEARBY_WIFI_DEVICES
+                : android.Manifest.permission.ACCESS_FINE_LOCATION;
+        if (checkSelfPermission(perm) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{perm}, REQ_PERM);
+            return;
+        }
+        statusTv.setText("Створюю швидку мережу...");
+        Direct.start(this, (ok, msg) -> ui.post(() -> {
+            if (!ok) statusTv.setText(msg);
+            refresh();
+        }));
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int req, String[] perms, int[] res) {
+        super.onRequestPermissionsResult(req, perms, res);
+        if (req == REQ_PERM && res.length > 0 && res[0] == PackageManager.PERMISSION_GRANTED) startFast();
+        else if (req == REQ_PERM) statusTv.setText("Без дозволу швидкий режим не працює");
     }
 
     // ---------- Bluetooth ----------
@@ -240,6 +278,7 @@ public class MainActivity extends Activity {
     }
 
     private void handleIntent(Intent i) {
+        if (Receiver.isP2p(i)) { Receiver.receive(this, i); return; }
         if (i != null && Intent.ACTION_SEND.equals(i.getAction())) {
             Uri u = i.getParcelableExtra(Intent.EXTRA_STREAM);
             if (u != null) useUri(u);

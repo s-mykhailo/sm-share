@@ -17,6 +17,10 @@ Send a file or an installed app (APK) from one Android phone to another by tappi
 
 If NFC does not work, the link is shown on screen and can be typed in by hand.
 
+### Fast mode: Wi-Fi Direct (SM Share on both phones)
+
+"Fast: Wi-Fi Direct" makes the sending phone create its own 5 GHz Wi-Fi Direct network (no router, no internet). Tap the phones: NFC passes the network and link, the receiving phone (Android 10+, SM Share open) joins it, confirms the system "connect" prompt, and saves the file to Downloads. Typically 10-30 MB/s, versus about 0.2 MB/s over Bluetooth.
+
 ### Without internet or Wi-Fi: Bluetooth
 
 The "Send via Bluetooth" button hands the same file to the system Bluetooth share (OBEX Object Push). Nothing needs to be installed on the other phone: pair the phones, accept the incoming file there. The Wi-Fi/NFC way also works without internet if both phones are on one hotspot.

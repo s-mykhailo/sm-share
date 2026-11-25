@@ -36,6 +36,10 @@ final class Share {
     private static ServerSocket server;
     static volatile int port;
 
+    /** Швидкий режим (Wi-Fi Direct): дані мережі, яку створив цей телефон. */
+    static volatile String directSsid, directPass;
+    static final String DIRECT_IP = "192.168.49.1";
+
     private Share() {}
 
     static void status(String s) {
@@ -103,7 +107,7 @@ final class Share {
     }
 
     static String url() {
-        String ip = ip();
+        String ip = directSsid != null ? DIRECT_IP : ip();
         if (ip == null || !active()) return null;
         return "http://" + ip + ":" + port + "/d/" + enc(name);
     }
@@ -111,6 +115,11 @@ final class Share {
     static byte[] ndefMessage() {
         String u = url();
         if (u == null) return null;
+        if (directSsid != null) {
+            byte[] pl = (directSsid + "\n" + directPass + "\n" + u).getBytes(StandardCharsets.UTF_8);
+            return new NdefMessage(NdefRecord.createExternal("smshare.app", "p2p", pl),
+                    NdefRecord.createUri(u)).toByteArray();
+        }
         return new NdefMessage(NdefRecord.createUri(u)).toByteArray();
     }
 
@@ -190,7 +199,7 @@ final class Share {
         InputStream in = file != null ? new FileInputStream(file) : app.getContentResolver().openInputStream(uri);
         if (in == null) return;
         try (InputStream src = in) {
-            byte[] buf = new byte[64 * 1024];
+            byte[] buf = new byte[256 * 1024];
             long sent = 0, lastReport = 0;
             int r;
             status("Передаю...");
