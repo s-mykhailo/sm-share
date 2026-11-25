@@ -17,6 +17,10 @@ Send a file or an installed app (APK) from one Android phone to another by tappi
 
 If NFC does not work, the link is shown on screen and can be typed in by hand.
 
+### Without internet or Wi-Fi: Bluetooth
+
+The "Send via Bluetooth" button hands the same file to the system Bluetooth share (OBEX Object Push). Nothing needs to be installed on the other phone: pair the phones, accept the incoming file there. The Wi-Fi/NFC way also works without internet if both phones are on one hotspot.
+
 ## Requirements
 
 - Sending phone: Android 8+, NFC with HCE (most phones with NFC)

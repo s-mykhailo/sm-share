@@ -6,6 +6,7 @@ import android.content.ComponentName;
 import android.content.Intent;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
 import android.database.Cursor;
 import android.graphics.Color;
 import android.graphics.Typeface;
@@ -37,7 +38,7 @@ public class MainActivity extends Activity {
 
     private final Handler ui = new Handler(Looper.getMainLooper());
     private TextView fileTv, statusTv, hintTv;
-    private Button stopBtn, nfcBtn;
+    private Button stopBtn, nfcBtn, btBtn;
     private NfcAdapter nfc;
 
     @Override
@@ -137,6 +138,10 @@ public class MainActivity extends Activity {
         app.setOnClickListener(v -> pickApp());
         root.addView(app);
 
+        btBtn = button("Передати через Bluetooth (без інтернету)", false);
+        btBtn.setOnClickListener(v -> sendBluetooth());
+        root.addView(btBtn);
+
         stopBtn = button("Зупинити", false);
         stopBtn.setOnClickListener(v -> { Share.stop(); refresh(); });
         root.addView(stopBtn);
@@ -160,16 +165,18 @@ public class MainActivity extends Activity {
             fileTv.setText("Файл не вибрано");
             statusTv.setText(nfc == null ? "На цьому телефоні нема NFC" : "Обери, що передати");
             stopBtn.setVisibility(View.GONE);
+            btBtn.setVisibility(View.GONE);
             hintTv.setText("");
             return;
         }
+        btBtn.setVisibility(View.VISIBLE);
         fileTv.setText(Share.name + (Share.size >= 0 ? "  ·  " + human(Share.size) : ""));
         stopBtn.setVisibility(View.VISIBLE);
         String url = Share.url();
         if (nfcOff) {
             statusTv.setText("Увімкни NFC");
         } else if (url == null) {
-            statusTv.setText("Нема Wi-Fi. Увімкни Wi-Fi або точку доступу");
+            statusTv.setText("Нема Wi-Fi. Увімкни Wi-Fi або точку доступу, або передай через Bluetooth");
         } else {
             statusTv.setText("Готово. Приклади інший телефон до спини цього");
         }
@@ -182,6 +189,34 @@ public class MainActivity extends Activity {
         if (b < 1024 * 1024) return String.format("%.1f КБ", b / 1024.0);
         if (b < 1024L * 1024 * 1024) return String.format("%.1f МБ", b / 1048576.0);
         return String.format("%.2f ГБ", b / 1073741824.0);
+    }
+
+    // ---------- Bluetooth ----------
+
+    /** Віддає файл системному Bluetooth-обміну (OPP). На другому телефоні додаток не потрібен. */
+    private void sendBluetooth() {
+        if (!Share.active()) return;
+        PackageManager pm = getPackageManager();
+        Intent send = new Intent(Intent.ACTION_SEND);
+        send.setType(Share.mime != null ? Share.mime : "application/octet-stream");
+        send.putExtra(Intent.EXTRA_STREAM, ShareProvider.uriFor(Share.name));
+        send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+
+        String btPkg = null;
+        for (ResolveInfo ri : pm.queryIntentActivities(send, 0)) {
+            String p = ri.activityInfo.packageName;
+            if (p.toLowerCase().contains("bluetooth")) { btPkg = p; break; }
+        }
+        try {
+            if (btPkg != null) {
+                send.setPackage(btPkg);
+                startActivity(send);
+            } else {
+                startActivity(Intent.createChooser(send, "Передати через Bluetooth"));
+            }
+        } catch (Exception e) {
+            statusTv.setText("Не вдалося відкрити Bluetooth-обмін");
+        }
     }
 
     // ---------- вибір ----------
