@@ -181,7 +181,7 @@ public class MainActivity extends Activity {
         fastBtn.setVisibility(Share.directSsid == null ? View.VISIBLE : View.GONE);
         if (Share.directSsid != null) {
             statusTv.setText("Швидкий режим готовий. Приклади телефон з SM Share до спини цього");
-            hintTv.setText("Другий телефон: Android 10+, SM Share відкритий, NFC увімкнено. Він сам підключиться по Wi-Fi Direct і збереже файл у Завантаження.");
+            hintTv.setText("Другий телефон: Android 10+, SM Share відкритий, NFC увімкнено. Він сам підключиться по Wi-Fi Direct і збереже файл у Завантаження.\n\nРучне підключення:\nМережа: " + Share.directSsid + "\nПароль: " + Share.directPass + "\nПосилання: " + Share.url());
             return;
         }
         fileTv.setText(Share.name + (Share.size >= 0 ? "  ·  " + human(Share.size) : ""));
